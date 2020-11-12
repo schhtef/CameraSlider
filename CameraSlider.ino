@@ -1,235 +1,146 @@
-#include <avr/interrupt.h>
-#include <LiquidCrystal.h>
-#include <LiquidMenu.h>
+#include <Arduino.h>
+
+/********************
+  Sept. 2014 Rui Azevedo - ruihfazevedo(@rrob@)gmail.com
+  menu output to standard arduino LCD (LiquidCrystal)
+  output: LCD
+  input: encoder and Serial
+  www.r-site.net
+***/
+#include <Wire.h>
+#include <menu.h>
+#include <menuIO/liquidCrystalOut.h>
+#include <menuIO/serialOut.h>
+#include <menuIO/serialIn.h>
+#include <menuIO/encoderIn.h>
+#include <menuIO/keyIn.h>
+#include <menuIO/chainStream.h>
+#include <AccelStepper.h>
 #include "PinMap.h"
 
-volatile byte aFlag = 0;
-volatile byte bFlag = 0;
-volatile byte pbFlag = 0;
+using namespace Menu;
 
-enum EncoderEvent : uint8_t {
-  ENC_NC = 0, //No rotation, default value
-  ENC_CW = 1, //Clockwise rotation
-  ENC_CCW = 2, //Counter-clockwise rotation
-  ENC_PRESS = 3 //Button event
-};
+AccelStepper stepperX(AccelStepper::DRIVER, X_STEP, X_DIR);
 
-enum EncoderState : uint8_t {
-  ENC_FOC = 0, //Rotation changes the focused line
-  ENC_VAL = 1, //Rotation changes a specific variable
-};
+//--------------------------------------------------------LCD--------------------------------------------------------
+#define LCD_RS 12
+#define LCD_EN 11
+LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+//--------------------------------------------------------LCD--------------------------------------------------------
 
-struct Encoder {
-  EncoderEvent encoderEvent;
-  EncoderState encoderState;
-};
-
-Encoder encoder;
+//--------------------------------------------------------Encoder--------------------------------------------------------
+#define ENC_A 3
+#define ENC_B 2
+//this encoder has a button here
+#define ENC_PB 4
+#define LEDPIN 13
 
 
-// -------------------------------------------------------------------MENU OBJECTS--------------------------------------------------------------------
-LiquidCrystal lcd(LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+encoderIn<ENC_A, ENC_B> encoder; //simple quad encoder driver
+encoderInStream<ENC_A, ENC_B> encStream(encoder, 4); // simple quad encoder fake Stream
 
-LiquidLine MainMenuTitle(0, 0, "Main Menu");
-LiquidLine Timelapse(0, 1, "Timelapse Mode");
-LiquidLine Oneshot(0, 1, "Oneshot Mode");
-LiquidLine Parallax(0, 1, "Parallax Mode");
+//a keyboard with only one key as the encoder button
+keyMap encBtn_map[] = {{ -ENC_PB, defaultNavCodes[enterCmd].ch}}; //negative pin numbers use internal pull-up, this is on when low
+keyIn<1> encButton(encBtn_map);//1 is the number of keys
 
-LiquidLine Framerate(6, 0, "Framerate");
-LiquidLine FramerateVar(6, 1, 123);
-LiquidLine Speed(6, 0, "Speed");
-LiquidLine SpeedVar(6, 1, 456);
-LiquidLine Distance(6, 0, "Distance");
-LiquidLine DistanceVar(6, 1, 789);
-LiquidLine Rotation(6, 0, "Rotation");
-LiquidLine RotationVar(6, 1, 246);
-LiquidLine Period(6, 0, "Loop Period");
-LiquidLine PeriodVar(6, 1, 135);
-LiquidLine Execute(0, 1, "Execute");
-LiquidLine Back(0, 1, "Back");
+//input from the encoder + encoder button + serial
+serialIn serial(Serial);
+menuIn* inputsList[] = {&encStream, &encButton, &serial};
+chainStream<3> in(inputsList);//3 is the number of inputs
+//--------------------------------------------------------Encoder--------------------------------------------------------
+int stepperEnable = HIGH;
+int stepperDistance = 0;
+result turnOnStepper() {
+  digitalWrite(X_EN, stepperEnable);
+  Serial.println("Toggled Stepper");
+  Serial.println(stepperEnable);
+  return proceed;
+}
 
-LiquidScreen MainMenuScreen;
-LiquidScreen TimelapseScreen;
-LiquidScreen OneshotScreen;
-LiquidScreen ParallaxScreen;
+result translateStepper(){
+  Serial.println("Translating Stepper");
+  stepperX.moveTo(stepperDistance);
+  return proceed;
+}
 
-LiquidMenu MainMenu(lcd, MainMenuScreen);
-LiquidMenu TimelapseMenu(lcd, TimelapseScreen);
-LiquidMenu OneshotMenu(lcd, OneshotScreen);
-LiquidMenu ParallaxMenu(lcd, ParallaxScreen);
+TOGGLE(stepperEnable,enableStepper,"Stepper: ",turnOnStepper,enterEvent,noStyle//,doExit,enterEvent,noStyle
+  ,VALUE("On",LOW,doNothing,noEvent)
+  ,VALUE("Off",HIGH,doNothing,noEvent)
+);
 
-LiquidSystem menuSystem(MainMenu, TimelapseMenu, OneshotMenu, ParallaxMenu, 1);
-// -------------------------------------------------------------------MENU OBJECTS--------------------------------------------------------------------
+MENU(timelapseMenu, "Timelapse Mode", doNothing, noEvent, wrapStyle
+  ,FIELD(stepperDistance,"Distance","cm",0,2000,100,10,translateStepper,exitEvent,wrapStyle)
+  ,EXIT("<Back")
+  );
+
+MENU(mainMenu,"Main menu",doNothing,noEvent,wrapStyle
+  ,SUBMENU(enableStepper)
+  ,SUBMENU(timelapseMenu)
+);
+
+//const panel panels[] MEMMODE={{0,0,16,2}};
+//navNode* nodes[sizeof(panels)/sizeof(panel)];
+//panelsList pList(panels,nodes,1);
+
+#define MAX_DEPTH 2
+/*idx_t tops[MAX_DEPTH];
+  liquidCrystalOut outLCD(lcd,tops,pList);//output device for LCD
+  menuOut* constMEM outputs[] MEMMODE={&outLCD};//list of output devices
+  outputsList out(outputs,1);//outputs list with 2 outputs*/
+
+MENU_OUTPUTS(out, MAX_DEPTH
+             , LIQUIDCRYSTAL_OUT(lcd, {0, 0, 16, 2})
+             , NONE
+            );
+NAVROOT(nav, mainMenu, MAX_DEPTH, in, out); //the navigation root object
+
+result alert(menuOut& o, idleEvent e) {
+  if (e == idling) {
+    o.setCursor(0, 0);
+    o.print("alert test");
+    o.setCursor(0, 1);
+    o.print("[select] to continue...");
+  }
+  return proceed;
+}
+
+result doAlert(eventMask e, prompt &item) {
+  nav.idleOn(alert);
+  return proceed;
+}
+
+result idle(menuOut& o, idleEvent e) {
+  switch (e) {
+    case idleStart: o.print("suspending menu!"); break;
+    case idling: o.print("suspended..."); break;
+    case idleEnd: o.print("resuming menu."); break;
+  }
+  return proceed;
+}
 
 void setup() {
-  //This is code to enable pin change interrupts, will need this for push button and limit switch interrupts
-  PCICR |= 0x4; //enable port D interrupts
-  PCMSK2 |= 0x10; //mask PCINT20
-
-  //Init Encoder Struct
-  encoder.encoderEvent = ENC_NC;
-
-  //Configure interrupts for rotary encoder
-  pinMode(ENC_A, INPUT_PULLUP);
-  pinMode(ENC_B, INPUT_PULLUP);
   pinMode(ENC_PB, INPUT_PULLUP);
-  attachInterrupt(0, ENC_A_ISR, RISING);
-  attachInterrupt(1, ENC_B_ISR, RISING);
-  Serial.begin(115200); // start the serial monitor link
-
-  // Add more "lines" than the display has. The extra will be scrolled.
+  pinMode(LEDPIN, OUTPUT);
+  Serial.begin(115200);
+  while (!Serial);
+  Serial.println("Arduino Menu Library"); Serial.flush();
+  encoder.begin();
   lcd.begin(16, 2);
-  initMenu();
-  menuSystem.update();
+  nav.idleTask = idle; //point a function to be used when menu is suspended
+  nav.showTitle = false;
+  lcd.setCursor(0, 0);
+  lcd.print("Camera Ctrl");
+  lcd.setCursor(0, 1);
+  lcd.print("Stefan B.");
+
+  stepperX.setMaxSpeed(5000);
+  stepperX.setSpeed(5000);
+  stepperX.setAcceleration(100);
+  delay(2000);
 }
-
-void initMenu(){
-  Timelapse.attach_function(ENC_PRESS, changeMenu);
-  Oneshot.attach_function(ENC_PRESS, changeMenu);
-  Parallax.attach_function(ENC_PRESS, changeMenu);
-  Back.attach_function(ENC_PRESS, changeMenu);
-
-  Framerate.attach_function(ENC_PRESS, blankFunction);
-  Speed.attach_function(ENC_PRESS, blankFunction);
-  Distance.attach_function(ENC_PRESS, blankFunction);
-  Rotation.attach_function(ENC_PRESS, blankFunction);
-  Period.attach_function(ENC_PRESS, blankFunction);
-  Execute.attach_function(ENC_PRESS, blankFunction);
-  Back.attach_function(ENC_PRESS, changeMenu);
-
-  //MainMenuScreen.add_line(MainMenuTitle);
-  MainMenuScreen.add_line(Timelapse);
-  MainMenuScreen.add_line(Oneshot);
-  MainMenuScreen.add_line(Parallax);
-
-  TimelapseScreen.add_line(Framerate);
-  TimelapseScreen.add_line(Distance);
-  TimelapseScreen.add_line(Rotation);
-  TimelapseScreen.add_line(Execute);
-  TimelapseScreen.add_line(Back);
-
-  OneshotScreen.add_line(Speed);
-  OneshotScreen.add_line(Distance);
-  OneshotScreen.add_line(Rotation);
-  OneshotScreen.add_line(Execute);
-  OneshotScreen.add_line(Back);
-
-  ParallaxScreen.add_line(Speed);
-  ParallaxScreen.add_line(Rotation);
-  ParallaxScreen.add_line(Period);
-  ParallaxScreen.add_line(Execute);
-  ParallaxScreen.add_line(Back);
-
-  MainMenuScreen.set_displayLineCount(2);
-  TimelapseScreen.set_displayLineCount(2);
-  OneshotScreen.set_displayLineCount(2);
-  ParallaxScreen.set_displayLineCount(2);
-}
-// -------------------------------------------------------------------INTERRUPTS-------------------------------------------------------------------
-void ENC_A_ISR() {
-  noInterrupts();
-  byte reading = 0;
-  reading = PIND & 0xC; //read all eight pin values then strip away all but ENC_A and ENC_B's values
-  if (reading == 0xC && aFlag) { //check that we have both pins at detent (HIGH) and that we are expecting detent on this pin's rising edge
-    encoder.encoderEvent = ENC_CCW;
-    //menu.switch_focus(0);
-    bFlag = 0; //reset flags for the next turn
-    aFlag = 0; //reset flags for the next turn
-  }
-  else if (reading = 0x4) bFlag = 1;
-  interrupts();
-}
-
-void ENC_B_ISR() {
-  noInterrupts();
-  byte reading = 0;
-  reading = PIND & 0xC; //read all eight pin values then strip away all but ENC_A and ENC_B's values
-  if (reading == 0xC && bFlag) { //check that we have both pins at detent (HIGH) and that we are expecting detent on this pin's rising edge
-    encoder.encoderEvent = ENC_CW;
-    bFlag = 0; //reset flags for the next turn
-    aFlag = 0; //reset flags for the next turn
-  }
-  else if (reading = 0x8) aFlag = 1;
-  interrupts();
-}
-
-ISR(PCINT2_vect) {
-  if (pbFlag) {
-    encoder.encoderEvent = ENC_PRESS;
-    pbFlag = 0;
-  }
-  else if (!pbFlag) {
-    pbFlag = 1;
-  }
-}
-// -------------------------------------------------------------------INTERRUPTS-------------------------------------------------------------------
-
-//switch focus when encoder event is detected
-void onEncoderEvent() {
-  //changes line focus or calls attached function when encoder is in the ENC_FOC state
-  if (encoder.encoderState == ENC_FOC) {
-    switch (encoder.encoderEvent) {
-      case ENC_CW: //next line
-        menuSystem.switch_focus(1);
-        //Serial.println("CW");
-        break;
-      case ENC_CCW: //previous line
-        menuSystem.switch_focus(0);
-        //Serial.println("CCW");
-        break;
-      case ENC_PRESS: //select
-        menuSystem.call_function(ENC_PRESS);
-        //Serial.println("PRESS");
-        break;
-      case ENC_NC: //invalid, shouldn't be true in this function
-        //Serial.println("INVALID-NO CHANGE");
-        break;
-      default: //invalid
-        //Serial.println("INVALID");
-        break;
-    }
-  }
-  else if (encoder.encoderState == ENC_VAL) {
-
-  }
-  encoder.encoderEvent = ENC_NC;
-}
-
-// -------------------------------------------------------------------CALLBACKS-------------------------------------------------------------------
-
-// Blank function, it is attached to the lines so that they become focusable.
-void blankFunction() {
-  return;
-}
-
-void changeMenu() {
-  switch (menuSystem.get_focusedLine()) {
-    case 0: //timelapse
-      menuSystem.change_menu(TimelapseMenu);
-      break;
-    case 1: //oneshot
-      menuSystem.change_menu(OneshotMenu);
-      break;
-    case 2:
-      menuSystem.change_menu(ParallaxMenu);
-      break;
-    case 4:
-      menuSystem.change_menu(MainMenu);
-      break;
-    default:
-      Serial.println(menuSystem.get_focusedLine());
-      Serial.println("Unexpected Line Index");
-      break;
-  }
-  //menuSystem.change_menu(subMenu);
-}
-
-int modifyVariable() {
-
-  return 125;
-}
-// -------------------------------------------------------------------CALLBACKS-------------------------------------------------------------------
 
 void loop() {
-  if (encoder.encoderEvent != ENC_NC) onEncoderEvent(); //Update menu based on encoder value
+  nav.poll();
+  stepperX.run();
+  //delay(100);//simulate a delay as if other tasks are running
 }
