@@ -31,7 +31,6 @@ LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 //--------------------------------------------------------Encoder--------------------------------------------------------
 #define ENC_A 3
 #define ENC_B 2
-//this encoder has a button here
 #define ENC_PB 4
 #define LEDPIN 13
 
@@ -48,8 +47,65 @@ serialIn serial(Serial);
 menuIn* inputsList[] = {&encStream, &encButton, &serial};
 chainStream<3> in(inputsList);//3 is the number of inputs
 //--------------------------------------------------------Encoder--------------------------------------------------------
+
+//--------------------------------------------------------Movement Modes--------------------------------------------------------
+
+enum ModeStates {
+  MENUSTATE = 0,
+  TIMELAPSE = 1
+};
+
+ModeStates cameraMode = MENUSTATE;
+
+struct timelapse{
+  int duration;
+  int clipLength;
+  int framesPerSecond;
+  int distanceX;
+  int currentShot;
+  unsigned long timeAtLastShot;
+  
+  int getNumFrames(void){
+    return clipLength * framesPerSecond;
+  }
+  int getTimeToShot(){
+    return duration/getNumFrames();
+  }
+  long getDistanceToShot(){
+    return (long)((float)distanceX/(float)(0.009*getNumFrames())); 
+  }
+  
+  void updateTimelapse(unsigned long currentTime){//all other movements caused by this function
+    if(this->currentShot == this->getNumFrames()) cameraMode = MENUSTATE; //reached end of sequence, stop commanding movements
+    if((currentTime - this->timeAtLastShot) >= this->getTimeToShot()*1000){ //if we have50 reached or passed the time between shots, command next movement
+    //perform shutter and movement logic
+    Serial.println("Shutter released!");
+    this->currentShot++;
+    stepperX.move(this->getDistanceToShot()); //move to next shot relative to current position
+    this->timeAtLastShot = millis();
+    }
+  }
+  void updateTimelapse(){//overloaded function for initial movement
+    Serial.println("Initial release!");
+    this->currentShot = 1;
+    cameraMode = TIMELAPSE;
+    stepperX.move(this->getDistanceToShot()); //move to next shot relative to current position
+    this->timeAtLastShot = millis();
+  }
+};
+
+timelapse timelapseMode;
+
+result initTimelapse(){ //needed for callback format of menu item
+//Callback for execute menu option
+  timelapseMode.updateTimelapse();
+  return proceed;
+}
+
 int stepperEnable = HIGH;
 int stepperDistance = 0;
+//--------------------------------------------------------Movement Modes--------------------------------------------------------
+
 result turnOnStepper() {
   digitalWrite(X_EN, stepperEnable);
   Serial.println("Toggled Stepper");
@@ -59,7 +115,7 @@ result turnOnStepper() {
 
 result translateStepper(){
   Serial.println("Translating Stepper");
-  stepperX.moveTo(stepperDistance);
+  stepperX.moveTo(stepperDistance*100);
   return proceed;
 }
 
@@ -69,7 +125,11 @@ TOGGLE(stepperEnable,enableStepper,"Stepper: ",turnOnStepper,enterEvent,noStyle/
 );
 
 MENU(timelapseMenu, "Timelapse Mode", doNothing, noEvent, wrapStyle
-  ,FIELD(stepperDistance,"Distance","cm",0,2000,100,10,translateStepper,exitEvent,wrapStyle)
+  ,FIELD(timelapseMode.distanceX,"Distance","mm",0,1000,100,10,doNothing,noEvent,wrapStyle)
+  ,FIELD(timelapseMode.duration,"Duration","s",0,2000,100,10,doNothing,noEvent,wrapStyle)
+  ,FIELD(timelapseMode.clipLength,"Cliplength","s",0,100,10,1,doNothing,noEvent,wrapStyle)
+  ,FIELD(timelapseMode.framesPerSecond,"FPS","fps",0,100,10,1,doNothing,noEvent,wrapStyle)
+  ,OP("Go!",initTimelapse,enterEvent)
   ,EXIT("<Back")
   );
 
@@ -78,15 +138,7 @@ MENU(mainMenu,"Main menu",doNothing,noEvent,wrapStyle
   ,SUBMENU(timelapseMenu)
 );
 
-//const panel panels[] MEMMODE={{0,0,16,2}};
-//navNode* nodes[sizeof(panels)/sizeof(panel)];
-//panelsList pList(panels,nodes,1);
-
 #define MAX_DEPTH 2
-/*idx_t tops[MAX_DEPTH];
-  liquidCrystalOut outLCD(lcd,tops,pList);//output device for LCD
-  menuOut* constMEM outputs[] MEMMODE={&outLCD};//list of output devices
-  outputsList out(outputs,1);//outputs list with 2 outputs*/
 
 MENU_OUTPUTS(out, MAX_DEPTH
              , LIQUIDCRYSTAL_OUT(lcd, {0, 0, 16, 2})
@@ -133,14 +185,23 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Stefan B.");
 
-  stepperX.setMaxSpeed(5000);
-  stepperX.setSpeed(5000);
-  stepperX.setAcceleration(100);
+  stepperX.setMaxSpeed(10000);
+  stepperX.setSpeed(8000);
+  stepperX.setAcceleration(800);
   delay(2000);
 }
 
 void loop() {
   nav.poll();
+  switch(cameraMode){
+    case MENUSTATE:
+    break;
+    case TIMELAPSE:
+      timelapseMode.updateTimelapse(millis());
+    break;
+    default:
+    break;
+  }
   stepperX.run();
   //delay(100);//simulate a delay as if other tasks are running
 }
