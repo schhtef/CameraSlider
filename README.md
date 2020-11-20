@@ -5,8 +5,8 @@ The CACS is software which provides an intuitive interface between a filmmaker a
 ### Dependencies
 The system is arduino based, so it relies heavily on the [Arduino AVR Core](https://github.com/arduino/ArduinoCore-avr).
 It also uses the following libraries:
--[ArduinoMenu](https://github.com/neu-rah/ArduinoMenu)
--[AccelStepper](https://www.airspayce.com/mikem/arduino/AccelStepper/)
+- [ArduinoMenu](https://github.com/neu-rah/ArduinoMenu)
+- [AccelStepper](https://www.airspayce.com/mikem/arduino/AccelStepper/)
 
 ### Current Features
 - Manual enable/disable of stepper motors
