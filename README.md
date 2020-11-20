@@ -21,9 +21,9 @@ It also uses the following libraries:
 - Additional modes
 
 ## Behaviour
-The table below summarizes the CACS
-| Input                               | Main Menu                 | Timelapse Menu            | Input Field                    | Enable Stepper        | Home Stepper                  |
-|-------------------------------------|---------------------------|---------------------------|--------------------------------|-----------------------|-------------------------------|
-| Clockwise encoder rotation          | Shift focus down one item | Shift focus down one item | Increase field value           | N/A                   | N/A                           |
-| Counter-clockwise encoder rotation  | Shift focus up one item   | Shift focus up one item   | Decrease field value           | N/A                   | N/A                           |
-| Encoder Push-Button Press           | Enter sub-menu            | Trigger menu item         | Change field change resolution | Turn on stepper motor | Start stepper homing function |
+The table below summarizes the CACS. The intersection of an input and menu context is the resulting output.
+| Input | Main Menu | Timelapse Menu | Input Field | Enable Stepper | Home Stepper | Execute Timelapse |
+|-|-|-|-|-|-|-|
+| Clockwise encoder rotation | Shift focus down one item | Shift focus down one item | Increase field value | N/A | N/A | N/A |
+| Counter-clockwise encoder rotation  | Shift focus up one item | Shift focus up one item | Decrease field value | N/A | N/A | N/A |
+| Encoder Push-Button Press | Enter sub-menu | Trigger menu item | Change field change resolution | Turn on stepper motor | Start stepper homing function | Carry out timelapse program |
