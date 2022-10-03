@@ -1,20 +1,19 @@
-# Camera Actuation Control System
-## Description
-The CACS is software which provides an intuitive interface between a filmmaker and the camera slider’s motorized system. It attempts to give control to the user such that they can easily make adjustments to camera movements without being hindered, but also hide complexity which is irrelevant to filmmaking.
+# Camera Slider Control Software
+This firmware provides an intuitive interface between a filmmaker and the camera slider’s motorized system. It attempts to give control to the user such that they can easily make adjustments to camera movements without being hindered, but also hide complexity which is irrelevant to filmmaking.
 
-### Dependencies
+## Dependencies
 The system is arduino based, so it relies heavily on the [Arduino AVR Core](https://github.com/arduino/ArduinoCore-avr).
 It also uses the following libraries:
 - [ArduinoMenu](https://github.com/neu-rah/ArduinoMenu)
 - [AccelStepper](https://www.airspayce.com/mikem/arduino/AccelStepper/)
 
-### Current Features
+## Current Features
 - Manual enable/disable of stepper motors
 - Fully functioning, navigatable, extendable menu
 - Timelapse mode
 - Homing function
 
-### Planned Features
+## Planned Features
 - Control of a second motor for camera rotation
 - Enriched timelapse mode with calculations for incremental camera rotation
 - Dynamic setting of camera position, ie. movements in direct response to input
